@@ -1,104 +1,136 @@
-import os
 import unittest
-from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from src.views import calculate_expenses, filter_transactions, generate_report, get_currency_data, get_stock_data
+import pandas as pd
+
+from src.views import create_json_response, events_page, main_page
 
 
-class TestFinanceModule(unittest.TestCase):
-    """Тесты для модуля финансовых операций."""
+class TestMainPage(unittest.TestCase):
 
-    @classmethod
-    def setUpClass(cls):
-        """Настройка окружения для всех тестов."""
-        os.environ["CURRENCY_API_URL"] = "http://fakeapi.com"
-        os.environ["CURRENCY_API_KEY"] = "fakeapikey"
-        os.environ["STOCK_API_URL"] = "http://fakeapi.com"
-        os.environ["STOCK_API_KEY"] = "fakeapikey"
-
-    def setUp(self):
-        """Инициализация тестовых данных перед каждым тестом."""
-        self.transactions = [
-            {"date": "2020-05-01", "amount": -17319, "category": "Супермаркеты"},
-            {"date": "2020-05-02", "amount": -3324, "category": "Фастфуд"},
-            {"date": "2020-05-03", "amount": -2289, "category": "Топливо"},
-            {"date": "2020-05-04", "amount": -1850, "category": "Развлечения"},
-            {"date": "2020-05-10", "amount": 33000, "category": "Пополнение_BANK007"},
-            {"date": "2020-05-15", "amount": 1242, "category": "Проценты_на_остаток"},
-        ]
-
-    @patch("src.views.requests.get")
-    def test_get_currency_data(self, mock_get):
-        """Тест получения данных о валюте."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"rates": {"USD": 74.21, "EUR": 88.47}}
-        mock_get.return_value = mock_response
-
-        results = get_currency_data()
-        expected = [{"currency": "USD", "rate": 74.21}, {"currency": "EUR", "rate": 88.47}]
-        self.assertEqual(results, expected)
-
-    def test_filter_transactions(self):
-        """Тест фильтрации транзакций по дате."""
-        start_date = datetime.strptime("2020-05-01", "%Y-%m-%d")
-        end_date = datetime.strptime("2020-05-03", "%Y-%m-%d")
-        filtered = filter_transactions(start_date, end_date)
-        self.assertEqual(len(filtered), 3)  # Должно вернуть 3 транзакции
-
-    def test_calculate_expenses(self):
-        """Тест калькуляции расходов."""
-        expenses = calculate_expenses(self.transactions)
-        self.assertEqual(expenses["total_amount"], 24782)  # Общая сумма расходов
-        self.assertEqual(len(expenses["main"]), 5)  # Должно вернуть 5 основные категории
-
-    @patch("src.views.requests.get")
-    def test_get_stock_data(self, mock_get):
-        """Тест получения данных о фондовом рынке."""
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"Time Series (Daily)": {"2020-05-15": {"4. close": "100.00"}}}
-        mock_response.headers = {"Content-Type": "application/json"}  # Установка заголовка
-        mock_response.status_code = 200  # Установка успешного кода ответа
-        mock_get.return_value = mock_response  # Возвращаем мок-ответ
-
-        result = get_stock_data("AAPL")
-        self.assertEqual(result, [{"stock": "AAPL", "price": 100.00}])
-
-    @patch("src.views.requests.get")
-    def test_get_stock_data_invalid_json(self, mock_get):
-        """Тест получения данных о фондовом рынке с некорректным JSON."""
-        mock_response = MagicMock()
-        mock_response.headers = {"Content-Type": "text/html"}  # Некорректный заголовок
-        mock_response.status_code = 200  # Установка успешного кода ответа
-        mock_get.return_value = mock_response  # Возвращаем некорректный мок-ответ
-
-        with self.assertRaises(ValueError) as context:
-            get_stock_data("AAPL")
-
-        self.assertEqual(
-            str(context.exception),
-            "Ошибка парсинга JSON: Получена некорректная страница вместо JSON. Проверьте API URL и ключ.",
+    @patch("src.views.load_transactions")
+    @patch("src.views.get_currency_rates")
+    @patch("src.views.get_stock_prices")
+    def test_main_page_valid_date(self, mock_get_stock_prices, mock_get_currency_rates, mock_load_transactions):
+        # Настройка мока для загрузки транзакций
+        test_date = "2020-05-01 12:00:00"
+        mock_load_transactions.return_value = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2020-05-01 12:01:00", "2020-05-01 12:02:00"]),
+                "amount": [-10, -20],
+                "category": ["Transport", "Food"],
+                "description": ["Taxi", "Lunch"],
+                "card": ["1234 5678 9876 5432", "1234 5678 9876 5432"],
+            }
         )
 
-    @patch("src.views.get_currency_data")
-    @patch("src.views.get_stock_data")
-    @patch("src.views.filter_transactions")
-    @patch("src.views.calculate_expenses")
-    def test_generate_report(
-        self, mock_calculate_expenses, mock_filter_transactions, mock_get_stock_data, mock_get_currency_data
-    ):
-        """Тест генерации финансового отчета."""
-        mock_filter_transactions.return_value = self.transactions
-        mock_calculate_expenses.return_value = {"total_amount": 24782, "main": []}
-        mock_get_currency_data.return_value = [{"currency": "USD", "rate": 74.21}]
-        mock_get_stock_data.return_value = [{"stock": "AAPL", "price": 100.00}]
+        # Настройка мока для валютных курсов и цен на акции
+        mock_get_currency_rates.return_value = {"USD": 75, "EUR": 90}
+        mock_get_stock_prices.return_value = {"AAPL": 150, "GOOGL": 2800}
 
-        report = generate_report("2020-05-15", "AAPL")
+        # Вызов функции
+        response = main_page(test_date, stock_symbol="AAPL")
 
-        self.assertIn("expenses", report)
-        self.assertIn("currency_rates", report)
-        self.assertIn("stock_prices", report)
-        self.assertEqual(report["stock_prices"], [{"stock": "AAPL", "price": 100.00}])
+        # Проверка содержимого ответа
+        expected_response = {
+            "greeting": "Добрый день",  # Исправьте в зависимости от вашей функции get_greeting()
+            "cards": [{"last_digits": "5432", "total_spent": round(-30, 2), "cashback": round(-30 * 0.01, 2)}],
+            "top_transactions": [
+                {"date": "01.05.2020", "amount": -10, "category": "Transport", "description": "Taxi"},
+                {"date": "01.05.2020", "amount": -20, "category": "Food", "description": "Lunch"},
+            ],
+            "currency_rates": {"USD": 75, "EUR": 90},
+            "stock_prices": {"AAPL": 150, "GOOGL": 2800},
+        }
+
+        # Сравнение JSON-ответа
+        self.assertEqual(response, create_json_response(expected_response))
+
+    def test_main_page_invalid_date_format(self):
+        # Вызов функции с неверным форматом даты
+        invalid_date = "01-05-2020"
+        response = main_page(invalid_date)
+
+        # Проверка на наличие ошибки в ответе
+        self.assertEqual(response, '{"error": "Неверный формат даты. Используйте YYYY-MM-DD HH:MM:SS."}')
+
+    @patch("src.views.load_transactions")
+    def test_main_page_no_data(self, mock_load_transactions):
+        # Настройка мока для загрузки транзакций
+        mock_load_transactions.return_value = pd.DataFrame()  # Возвращаем пустой DataFrame
+
+        # Вызов функции с валидной датой
+        response = main_page("2020-05-01")
+
+        # Проверка на наличие ошибки в ответе
+        self.assertEqual(response, '{"error": "Данные транзакций отсутствуют."}')
+
+
+class TestEventsPage(unittest.TestCase):
+
+    @patch("src.views.load_transactions")
+    @patch("src.views.get_currency_rates")
+    @patch("src.views.get_stock_prices")
+    def test_events_page_valid_date(self, mock_get_stock_prices, mock_get_currency_rates, mock_load_transactions):
+        # Настройка мока для загрузки транзакций
+        mock_load_transactions.return_value = pd.DataFrame(
+            {
+                "date": pd.to_datetime(["2020-05-01 12:00:00", "2020-05-02 12:00:00"]),
+                "amount": [-20, 50],
+                "category": ["Food", "Salary"],
+            }
+        )
+
+        mock_get_currency_rates.return_value = {"USD": 75, "EUR": 90}
+        mock_get_stock_prices.return_value = {"AAPL": 150, "GOOGL": 2800}
+
+        # Вызов функции с валидной датой
+        response = events_page("2020-05-01 12:00:00")
+
+        # Ожидаемый ответ
+        expected_response = {
+            "expenses": {"total_amount": float(-20), "main": [{"category": "Food", "amount": 20.0}]},
+            "income": {"total_amount": float(0), "main": []},  # Убедитесь, что доход не учитывается заэто время
+            "currency_rates": {"USD": 75, "EUR": 90},
+            "stock_prices": {"AAPL": 150, "GOOGL": 2800},
+        }
+
+        # Сравнение JSON-ответа
+        self.assertEqual(response, create_json_response(expected_response))
+
+    def test_events_page_invalid_date_format(self):
+        # Вызов функции с неверным форматом даты
+        invalid_date = "01-05-2020"
+        response = events_page(invalid_date)
+
+        # Проверка на наличие ошибки в ответе
+        self.assertEqual(
+            response, create_json_response({"error": "Неверный формат даты. Используйте YYYY-MM-DD HH:MM:SS."})
+        )
+
+    @patch("src.views.load_transactions")
+    def test_events_page_no_data(self, mock_load_transactions):
+        # Настройка мока для загрузки транзакций (возвращаем пустой DataFrame)
+        mock_load_transactions.return_value = pd.DataFrame(columns=["date", "amount", "category"])
+
+        # Вызов функции с валидной датой
+        response = events_page("2020-05-01 12:00:00")
+
+        # Проверка на наличие ошибки в ответе
+        self.assertEqual(response, create_json_response({"error": "Данные транзакций отсутствуют."}))
+
+    @patch("src.views.load_transactions")
+    def test_events_page_no_data_in_period(self, mock_load_transactions):
+        # Настройка мока для загрузки транзакций
+        mock_load_transactions.return_value = pd.DataFrame(
+            {"date": pd.to_datetime(["2020-05-01 12:00:00"]), "amount": [100], "category": ["Salary"]}
+        )
+
+        # Вызов функции с валидной датой и заданным периодом (например, 2020-06)
+        response = events_page("2020-06-01 12:00:00", period="M")
+
+        # Проверка на наличие ошибки в ответе
+        self.assertEqual(response, create_json_response({"error": "Нет данных за указанный период."}))
 
 
 if __name__ == "__main__":
