@@ -8,6 +8,7 @@ from src.utils import get_currency_rates, get_stock_prices, load_transactions
 
 
 def get_greeting() -> str:
+    """Возвращает приветствие в зависимости от текущего времени суток."""
     current_hour = datetime.now().hour
     if 5 <= current_hour < 12:
         return "Доброе утро"
@@ -20,10 +21,12 @@ def get_greeting() -> str:
 
 
 def create_json_response(data):
+    """Формирует JSON-ответ из переданных данных."""
     return json.dumps(data, ensure_ascii=False)
 
 
 def main_page(date_str: str, stock_symbol: str = None):
+    """Формация главной страницы с данными о транзакциях, курсах валют и ценах акций."""
     # Добавьте часы, минуты и секунды, если они отсутствуют
     if len(date_str) == 10:  # YYYY-MM-DD
         date_str += " 00:00:00"
@@ -71,6 +74,7 @@ def main_page(date_str: str, stock_symbol: str = None):
 
 
 def events_page(date_time_str: str, period: str = "M") -> str:
+    """Формирует страницу событий, представляя данные за указанный период."""
     # Проверка на валидность даты
     if not is_valid_datetime(date_time_str):
         return create_json_response({"error": "Неверный формат даты. Используйте YYYY-MM-DD HH:MM:SS."})
@@ -131,6 +135,7 @@ def events_page(date_time_str: str, period: str = "M") -> str:
 
 
 def get_start_and_end_dates(input_date_time: datetime, period: str) -> (datetime, datetime):
+    """Возвращает начальную и конечную даты для заданного периода."""
     if period == "W":
         start_date = input_date_time - pd.Timedelta(days=input_date_time.weekday())
         end_date = start_date + pd.Timedelta(days=6)
@@ -151,6 +156,7 @@ def get_start_and_end_dates(input_date_time: datetime, period: str) -> (datetime
 
 
 def is_valid_datetime(dt_str: str) -> bool:
+    """Проверяет, является ли строка даты и времени валидной."""
     try:
         # Проверяем формат с учетом времени
         datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")

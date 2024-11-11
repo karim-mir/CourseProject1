@@ -4,6 +4,7 @@ from src.views import events_page, main_page
 
 
 def validate_datetime(input_str):
+    """Проверяет, является ли введенная строка корректной датой и временем."""
     try:
         return datetime.strptime(input_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
@@ -11,6 +12,7 @@ def validate_datetime(input_str):
 
 
 def handle_main_page():
+    """Обрабатывает действия на главной странице и выводит информацию о транзакциях, курсах валют и ценах акций."""
     print("Starting handle_main_page")
     date_time_input = input("Введите дату и время (YYYY-MM-DD HH:MM:SS): ")
     valid_date_time = validate_datetime(date_time_input)
@@ -34,6 +36,7 @@ def handle_main_page():
 
 
 def handle_events_page():
+    """Обрабатывает действия на странице событий и выводит информацию о расходах и доходах за определенный период."""
     print("Starting handle_events_page")
     date_time_input = input("Введите дату (YYYY-MM-DD HH:MM:SS): ")
     valid_date_time = validate_datetime(date_time_input)

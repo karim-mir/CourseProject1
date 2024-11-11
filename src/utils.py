@@ -24,6 +24,7 @@ if not STOCK_API_KEY or not CURRENCY_API_KEY:
 
 
 def load_transactions() -> pd.DataFrame:
+    """Загружает фиксированные данные транзакций в формате Pandas DataFrame."""
     # Ваши фиксированные данные
     data = {
         "date": ["2020-05-01", "2020-05-02", "2020-05-03", "2020-05-20", "2020-05-20"],
@@ -46,6 +47,7 @@ def load_transactions() -> pd.DataFrame:
 
 
 def get_expenses(start_date, end_date) -> dict:
+    """Возвращает данные о расходах за указанный период."""
     # Загружаем все транзакции
     df = load_transactions()  # Получаем все данные
 
@@ -71,6 +73,7 @@ def get_expenses(start_date, end_date) -> dict:
 
 
 def get_income(start_date, end_date) -> dict:
+    """Возвращает данные о доходах за указанный период."""
     df = load_transactions()
     filtered_income = df[(df["date"] >= start_date) & (df["date"] <= end_date) & (df["amount"] > 0)]
     total_income = filtered_income["amount"].sum()
@@ -83,6 +86,7 @@ def get_income(start_date, end_date) -> dict:
 
 
 def get_currency_rates() -> list:
+    """Получает актуальные курсы валют в базе USD."""
     try:
         url = f"{CURRENCY_API_URL}/latest?access_key={CURRENCY_API_KEY}&base=USD"
         response = requests.get(url)
@@ -104,6 +108,7 @@ def get_currency_rates() -> list:
 
 
 def get_stock_prices(stock_symbol: str) -> dict:
+    """Получает цены акций для заданных тикеров."""
     stocks = stock_symbol.split(",")
     stock_data = []
 
@@ -149,6 +154,7 @@ def get_stock_prices(stock_symbol: str) -> dict:
 
 
 def fetch_data(date_str, date_range="M", stock_symbol="AAPL"):
+    """Получает данные о расходах, доходах, курсах валют и ценах акций за указанные даты и диапазоны."""
     # Конвертация входной строки даты в объект даты
     date_format = "%Y-%m-%d"
     given_date = datetime.strptime(date_str, date_format)
