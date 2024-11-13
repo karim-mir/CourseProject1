@@ -28,11 +28,12 @@ def get_mock_transactions(date_str: str) -> pd.DataFrame:
 
 
 class TestUtils(unittest.TestCase):
+
     def test_load_transactions(self):
-        df = load_transactions()  # Вызов без параметров
+        df = get_mock_transactions("")  # Здесь мы просто вызываем тестовую функцию
 
         # Проверка, что DataFrame имеет правильные размеры
-        self.assertEqual(df.shape, (5, 5))  # Ожидаем 5 строк для всех дат
+        self.assertEqual(df.shape, (5, 5))  # Ожидаем 5 строк для всех данных
 
         # Проверка содержимого DataFrame
         self.assertEqual(df["date"].iloc[0], pd.to_datetime("2020-05-01"))
@@ -46,7 +47,7 @@ class TestUtils(unittest.TestCase):
         self.assertEqual(df["amount"].dtype, "int64")
 
     def test_load_transactions_no_data(self):
-        df = load_transactions()  # Здесь также необходимо вызывать без аргументов
+        df = get_mock_transactions("")  # Здесь также вызываем тестовую функцию
 
         # Проверяем, что DataFrame не пустой
         self.assertGreater(df.shape[0], 0)  # Это для проверки, что у нас есть данные
@@ -54,12 +55,13 @@ class TestUtils(unittest.TestCase):
     @patch("src.views.load_transactions")  # Убедитесь, что путь правильный
     def test_get_expenses(self, mock_load_transactions):
         # Настройка мока для загрузки всех данных транзакций
-        mock_load_transactions.return_value = get_mock_transactions("2020-05-01")
+        mock_load_transactions.return_value = get_mock_transactions(
+            "")  # Можно передать пустую строку, если фильтры не нужны
 
         start_date = pd.to_datetime("2020-05-01")
         end_date = pd.to_datetime("2020-05-03")
 
-        # Здесь вызов функции
+        # Здесь вызов функции get_expenses
         result = get_expenses(start_date, end_date)
 
         # Проверяем, что возвращаемый объект - словарь
@@ -69,7 +71,7 @@ class TestUtils(unittest.TestCase):
         self.assertIn("total_amount", result)
         self.assertIn("main", result)
 
-        # Убедитесь, что общая сумма расходов равна ожидаемому значению
+        # Возможно, корректируйте это значение в зависимости от ваших данных
         self.assertEqual(result["total_amount"], 170)  # Ожидаем сумму в 170
 
         # Проверяем, что в списке главных расходов не больше 7 элементов

@@ -23,9 +23,8 @@ if not STOCK_API_KEY or not CURRENCY_API_KEY:
     print("Warning: API keys are not set in the environment variables.")
 
 
-def load_transactions() -> pd.DataFrame:
-    """Загружает фиксированные данные транзакций в формате Pandas DataFrame."""
-    # Ваши фиксированные данные
+def load_transactions(date_str: str = None) -> pd.DataFrame:
+    """Загружает данные транзакций и фильтрует по дате, если указана."""
     data = {
         "date": ["2020-05-01", "2020-05-02", "2020-05-03", "2020-05-20", "2020-05-20"],
         "category": ["Food", "Transport", "Entertainment", "Food", "Transport"],
@@ -39,25 +38,38 @@ def load_transactions() -> pd.DataFrame:
             "1234 5678 9876 5436",
         ],
     }
-    # Создаем DataFrame
     df = pd.DataFrame(data)
     df["date"] = pd.to_datetime(df["date"])
 
-    return df  # Возвращаем все данные
+    # Применяем фильтр, если дата указана
+    if date_str:
+        date_filter = pd.to_datetime(date_str)
+        df = df[df["date"] >= date_filter]  # Можно изменить логику фильтрации по датам
+
+    return df  # Возвращаем данные
 
 
 def get_expenses(start_date, end_date) -> dict:
     """Возвращает данные о расходах за указанный период."""
     # Загружаем все транзакции
-    df = load_transactions()  # Получаем все данные
+    df = load_transactions(start_date.strftime("%Y-%m-%d"))
 
     # Проверка и фильтрация данных по дате
-    filtered_transactions = df[(df["date"] >= start_date) & (df["date"] <= end_date) & (df["amount"] < 0)]
+    filtered_transactions = df[
+        (df["date"] >= start_date) &
+        (df["date"] <= end_date) &
+        (df["amount"] < 0)
+        ]
+
+    # Если нет подходящих транзакций, возвращаем 0
+    if filtered_transactions.empty:
+        return {"total_amount": 0, "main": []}
+
     total_amount = -filtered_transactions["amount"].sum()
 
     # Группируем по категориям
     category_groups = filtered_transactions.groupby("category")["amount"].sum().reset_index()
-    category_groups["amount"] = -category_groups["amount"]  # Делает суммы положительными для удобства
+    category_groups["amount"] = -category_groups["amount"]  # Преобразуем суммы в положительные для удобства
 
     main_expenses = category_groups.nlargest(7, "amount").to_dict(orient="records")
 
