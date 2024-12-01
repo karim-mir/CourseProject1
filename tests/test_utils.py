@@ -1,256 +1,109 @@
-import os
+import json
 import unittest
-from unittest.mock import MagicMock, patch
+from datetime import datetime
+from unittest.mock import mock_open, patch
 
-import pandas as pd
-from dotenv import load_dotenv
-
-from src.utils import fetch_data, get_currency_rates, get_expenses, get_stock_prices, load_transactions
-
-
-def get_mock_transactions(date_str: str) -> pd.DataFrame:
-    data = {
-        "date": ["2020-05-01", "2020-05-02", "2020-05-03", "2020-05-20", "2020-05-20"],
-        "category": ["Food", "Transport", "Entertainment", "Food", "Transport"],
-        "amount": [50, -20, -150, -75, -30],
-        "description": ["Description 1", "Description 2", "Description 3", "Description 4", "Description 5"],
-        "card": [
-            "1234 5678 9876 5432",
-            "1234 5678 9876 5433",
-            "1234 5678 9876 5434",
-            "1234 5678 9876 5435",
-            "1234 5678 9876 5436",
-        ],
-    }
-    df = pd.DataFrame(data)
-    df["date"] = pd.to_datetime(df["date"])
-    return df
+from src.utils import calculate_cashback, get_currency_rates, get_greeting, get_stock_prices, load_user_settings
 
 
 class TestUtils(unittest.TestCase):
 
-    def test_load_transactions(self):
-        df = get_mock_transactions("")  # Здесь мы просто вызываем тестовую функцию
+    @patch("builtins.open", new_callable=mock_open, read_data=json.dumps({"setting1": "value1"}))
+    def test_load_user_settings(self, mock_file):
+        settings = load_user_settings("dummy_path")
+        self.assertEqual(settings, {"setting1": "value1"})
+        mock_file.assert_called_once_with("dummy_path", "r")
 
-        # Проверка, что DataFrame имеет правильные размеры
-        self.assertEqual(df.shape, (5, 5))  # Ожидаем 5 строк для всех данных
+    @patch("src.utils.datetime")
+    def test_get_greeting_morning(self, mock_datetime):
+        mock_datetime.now.return_value = datetime(2023, 1, 1, 9)  # 9 AM
+        self.assertEqual(get_greeting(), "Доброе утро")
 
-        # Проверка содержимого DataFrame
-        self.assertEqual(df["date"].iloc[0], pd.to_datetime("2020-05-01"))
-        self.assertEqual(df["amount"].iloc[0], 50)
-        self.assertEqual(df["category"].iloc[0], "Food")
-        self.assertEqual(df["description"].iloc[0], "Description 1")
-        self.assertEqual(df["card"].iloc[0], "1234 5678 9876 5432")
+    @patch("src.utils.datetime")
+    def test_get_greeting_afternoon(self, mock_datetime):
+        mock_datetime.now.return_value = datetime(2023, 1, 1, 15)  # 3 PM
+        self.assertEqual(get_greeting(), "Добрый день")
 
-        # Проверка типов данных
-        self.assertEqual(df["date"].dtype, "datetime64[ns]")
-        self.assertEqual(df["amount"].dtype, "int64")
-
-    def test_load_transactions_no_data(self):
-        df = get_mock_transactions("")  # Здесь также вызываем тестовую функцию
-
-        # Проверяем, что DataFrame не пустой
-        self.assertGreater(df.shape[0], 0)  # Это для проверки, что у нас есть данные
-
-    @patch("src.views.load_transactions")  # Убедитесь, что путь правильный
-    def test_get_expenses(self, mock_load_transactions):
-        # Настройка мока для загрузки всех данных транзакций
-        mock_load_transactions.return_value = get_mock_transactions(
-            "")  # Можно передать пустую строку, если фильтры не нужны
-
-        start_date = pd.to_datetime("2020-05-01")
-        end_date = pd.to_datetime("2020-05-03")
-
-        # Здесь вызов функции get_expenses
-        result = get_expenses(start_date, end_date)
-
-        # Проверяем, что возвращаемый объект - словарь
-        self.assertIsInstance(result, dict)
-
-        # Проверяем наличие ключей в результате
-        self.assertIn("total_amount", result)
-        self.assertIn("main", result)
-
-        # Возможно, корректируйте это значение в зависимости от ваших данных
-        self.assertEqual(result["total_amount"], 170)  # Ожидаем сумму в 170
-
-        # Проверяем, что в списке главных расходов не больше 7 элементов
-        self.assertLessEqual(len(result["main"]), 7)
-
-        # Проверяем содержимое главных расходов
-        expected_categories = ["Entertainment", "Transport"]
-        expected_amounts = [150, 20]  # Суммы положительных расходов для топ-категорий
-
-        for expected_category, expected_amount in zip(expected_categories, expected_amounts):
-            self.assertIn({"category": expected_category, "amount": expected_amount}, result["main"])
-
-
-class TestUtilsNew(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        # Загружаем переменные окружения из .env файла
-        load_dotenv()
-
-    def setUp(self):
-        # Фикстура для тестовых данных валют
-        self.mock_currency_response = {
-            "rates": {"EUR": 0.85, "GBP": 0.75, "JPY": 110.0},
-            "base": "USD",
-            "date": "2022-01-01",
-        }
-
-        # Фикстура для тестовых данных акций
-        self.mock_stock_response = {
-            "Meta Data": {
-                "1. Information": "Daily Prices (open, high, low, close) and Volumes",
-                "2. Symbol": "MSFT",
-                "3. Last Refreshed": "2022-01-01",
-                "4. Output Size": "Compact",
-                "5. Time Zone": "US/Eastern",
-            },
-            "Time Series (Daily)": {
-                "2022-01-01": {
-                    "1. open": "300.00",
-                    "2. high": "305.00",
-                    "3. low": "295.00",
-                    "4. close": "302.00",
-                    "5. volume": "1000000",
-                },
-                "2022-01-02": {
-                    "1. open": "302.00",
-                    "2. high": "310.00",
-                    "3. low": "299.00",
-                    "4. close": "308.00",
-                    "5. volume": "1500000",
-                },
-            },
-        }
+    @patch("src.utils.datetime")
+    def test_get_greeting_evening(self, mock_datetime):
+        mock_datetime.now.return_value = datetime(2023, 1, 1, 19)  # 7 PM
+        self.assertEqual(get_greeting(), "Добрый вечер")
 
     @patch("src.utils.requests.get")
-    def test_get_currency_rates(self, mock_get):
-        # Настраиваем mock
-        mock_get.return_value = MagicMock()
-        mock_get.return_value.json.return_value = self.mock_currency_response
-        mock_get.return_value.status_code = 200
+    def test_get_currency_rates_success(self, mock_requests_get):
+        # Mocking the response from requests.get
+        mock_response = mock_requests_get.return_value
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"rates": {"USD": 74.5, "EUR": 88.2}, "success": True}
 
-        # Вызов тестируемой функции
-        result = get_currency_rates()
+        user_currencies = ["USD", "EUR"]
+        rates = get_currency_rates(user_currencies)
 
-        # Проверяем результат
-        expected = [
-            {"currency": "EUR", "rate": 0.85},
-            {"currency": "GBP", "rate": 0.75},
-            {"currency": "JPY", "rate": 110.0},
-        ]
-        self.assertEqual(result, expected)
-        mock_get.assert_called_once()
+        expected_rates = [{"currency": "USD", "rate": 74.5}, {"currency": "EUR", "rate": 88.2}]
+        self.assertEqual(rates, expected_rates)
 
     @patch("src.utils.requests.get")
-    def test_get_stock_prices(self, mock_get):
-        # Настраиваем mock
-        mock_get.return_value = MagicMock()
-        mock_get.return_value.json.return_value = self.mock_stock_response
-        mock_get.return_value.status_code = 200
+    def test_get_currency_rates_failure(self, mock_requests_get):
+        # Mocking the response with an error
+        mock_response = mock_requests_get.return_value
+        mock_response.status_code = 400  # Bad request
+        mock_response.text = "Bad Request"
 
-        result = get_stock_prices("MSFT")
+        user_currencies = ["USD"]
+        rates = get_currency_rates(user_currencies)
 
-        # Проверяем результат
-        expected = [
-            {"date": "2022-01-01", "stock": "MSFT", "open": 300.0, "close": 302.0, "volume": 1000000},
-            {"date": "2022-01-02", "stock": "MSFT", "open": 302.0, "close": 308.0, "volume": 1500000},
+        self.assertEqual(rates, [])  # Should return empty on failure
+
+    @patch("src.utils.requests.get")
+    def test_get_stock_prices_success(self, mock_requests_get):
+        # Создание фальшивого ответа для успешного запроса
+        mock_response = mock_requests_get.return_value
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "Time Series (1min)": {
+                "2023-01-01 15:00:00": {"1. open": "150.00"},
+                "2023-01-01 15:01:00": {"1. open": "151.00"},
+            }
+        }
+
+        user_stocks = ["AAPL", "MSFT"]
+        prices = get_stock_prices(user_stocks)
+
+        expected_prices = [
+            {"stock": "AAPL", "price": 150.00},
+            {"stock": "MSFT", "price": 150.00},  # Последняя цена для MSFT также будет охвачена
         ]
 
-        self.assertEqual(result, expected)
-        # Проверяем на использование правильного API ключа
-        mock_get.assert_called_once_with(
-            f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=MSFT&apikey="
-            f"{os.getenv('STOCK_API_KEY')}"
-        )
+        self.assertEqual(prices, expected_prices)
 
+    @patch("src.utils.requests.get")
+    def test_get_stock_prices_no_data(self, mock_requests_get):
+        # Создание фальшивого ответа без данных Time Series
+        mock_response = mock_requests_get.return_value
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"Error Message": "Invalid API call"}
 
-class TestFetchData(unittest.TestCase):
+        user_stocks = ["AAPL"]
+        prices = get_stock_prices(user_stocks)
 
-    @patch("src.utils.get_expenses")
-    @patch("src.utils.get_income")
-    @patch("src.utils.get_currency_rates")
-    @patch("src.utils.get_stock_prices")
-    def test_fetch_data_month_range(
-        self, mock_get_stock_prices, mock_get_currency_rates, mock_get_income, mock_get_expenses
-    ):
-        # Настройка моков, чтобы вернуть тестовые данные
-        mock_get_expenses.return_value = [100, 200]
-        mock_get_income.return_value = [300, 400]
-        mock_get_currency_rates.return_value = [{"currency": "EUR", "rate": 0.85}]
-        mock_get_stock_prices.return_value = [{"date": "2022-01-01", "price": 150}]
+        self.assertEqual(prices, [])  # Должно вернуть пустой список
 
-        # Тестовая дата
-        date_str = "2022-01-15"
-        result = fetch_data(date_str, date_range="M", stock_symbol="AAPL")
+    @patch("src.utils.requests.get")
+    def test_get_stock_prices_api_error(self, mock_requests_get):
+        # Создание фальшивого ответа с ошибкой
+        mock_response = mock_requests_get.return_value
+        mock_response.status_code = 400  # Bad request
 
-        expected_result = {
-            "expenses": [100, 200],
-            "income": [300, 400],
-            "currency_rates": [{"currency": "EUR", "rate": 0.85}],
-            "stock_prices": [{"date": "2022-01-01", "price": 150}],
-        }
+        user_stocks = ["AAPL"]
+        prices = get_stock_prices(user_stocks)
 
-        # Проверяем результат
-        self.assertEqual(result, expected_result)
+        self.assertEqual(prices, [])  # Должно вернуть пустой список
 
-    @patch("src.utils.get_expenses")
-    @patch("src.utils.get_income")
-    @patch("src.utils.get_currency_rates")
-    @patch("src.utils.get_stock_prices")
-    def test_fetch_data_week_range(
-        self, mock_get_stock_prices, mock_get_currency_rates, mock_get_income, mock_get_expenses
-    ):
-        # Настройка моков, чтобы вернуть тестовые данные
-        mock_get_expenses.return_value = [50]
-        mock_get_income.return_value = [100]
-        mock_get_currency_rates.return_value = [{"currency": "GBP", "rate": 0.75}]
-        mock_get_stock_prices.return_value = [{"date": "2022-01-12", "price": 155}]
+    def test_calculate_cashback(self):
+        total_spent = 100.00
+        cashback = calculate_cashback(total_spent)
 
-        # Тестовая дата
-        date_str = "2022-01-12"
-        result = fetch_data(date_str, date_range="W", stock_symbol="AAPL")
-
-        expected_result = {
-            "expenses": [50],
-            "income": [100],
-            "currency_rates": [{"currency": "GBP", "rate": 0.75}],
-            "stock_prices": [{"date": "2022-01-12", "price": 155}],
-        }
-
-        # Проверяем результат
-        self.assertEqual(result, expected_result)
-
-    @patch("src.utils.get_expenses")
-    @patch("src.utils.get_income")
-    @patch("src.utils.get_currency_rates")
-    @patch("src.utils.get_stock_prices")
-    def test_fetch_data_year_range(
-        self, mock_get_stock_prices, mock_get_currency_rates, mock_get_income, mock_get_expenses
-    ):
-        # Настройка моков, чтобы вернуть тестовые данные
-        mock_get_expenses.return_value = [1200]
-        mock_get_income.return_value = [5000]
-        mock_get_currency_rates.return_value = [{"currency": "JPY", "rate": 110.0}]
-        mock_get_stock_prices.return_value = [{"date": "2022-01-01", "price": 140}]
-
-        # Тестовая дата
-        date_str = "2022-12-15"
-        result = fetch_data(date_str, date_range="Y", stock_symbol="AAPL")
-
-        expected_result = {
-            "expenses": [1200],
-            "income": [5000],
-            "currency_rates": [{"currency": "JPY", "rate": 110.0}],
-            "stock_prices": [{"date": "2022-01-01", "price": 140}],
-        }
-
-        # Проверяем результат
-        self.assertEqual(result, expected_result)
+        self.assertEqual(cashback, 1.00)  # 1% от 100.00 должно быть 1.00
 
 
 if __name__ == "__main__":
