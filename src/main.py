@@ -1,64 +1,110 @@
 from datetime import datetime
+import pandas as pd
+import os
+from src.utils import (
+    get_greeting,
+    get_currency_rates,
+    get_stock_prices,
+    load_user_settings,
+    calculate_cashback
+)
+from src.views import create_json_response, load_operations_data
 
-from src.views import events_page, main_page
+def process_operations(operations):
+    transactions = []
+    cards = {}
 
+    # Логируем операции для отладки
+    print("Загруженные операции:", operations)
 
-def validate_datetime(input_str):
-    """Проверяет, является ли введенная строка корректной датой и временем."""
-    try:
-        return datetime.strptime(input_str, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return None
+    for operation in operations:
+        # Проверка, что operation является словарем
+        if not isinstance(operation, dict):
+            print(f"Ожидался словарь, но получено: {operation}")
+            continue
 
+        # Проверяем наличие необходимых ключей и их значения
+        card_number = operation.get('Номер карты')
+        amount = operation.get('Сумма операции')
 
-def handle_main_page():
-    """Обрабатывает действия на главной странице и выводит информацию о транзакциях, курсах валют и ценах акций."""
-    print("Starting handle_main_page")
-    date_time_input = input("Введите дату и время (YYYY-MM-DD HH:MM:SS): ")
-    valid_date_time = validate_datetime(date_time_input)
+        # Проверка на nan
+        if pd.isna(card_number) or pd.isna(amount):
+            print(f"Недостаточно данных для обработки операции: {operation}")
+            continue
 
-    while not valid_date_time:
-        print("Неверный формат даты и времени. Попробуйте снова.")
-        date_time_input = input("Введите дату и время (YYYY-MM-DD HH:MM:SS): ")
-        valid_date_time = validate_datetime(date_time_input)
+        # Обработка суммы
+        try:
+            amount_float = float(amount)  # Преобразуем в float
+        except ValueError:
+            print(f"Ошибка преобразования суммы: {amount}. Пропускаем эту операцию.")
+            continue
 
-    while True:
-        stock_symbol_input = input("Введите символ акции (или несколько через запятую): ").strip()
-        if stock_symbol_input:
-            stock_symbols = [s.strip() for s in stock_symbol_input.split(",")]
-            break
+        # Сохраняем данные по картам
+        if card_number not in cards:
+            cards[card_number] = {
+                "last_digits": card_number[-4:],  # Последние 4 цифры
+                "total_spent": 0,
+                "cashback": 0
+            }
+
+        # Обновляем итоги
+        cards[card_number]["total_spent"] += abs(amount_float)
+        cards[card_number]["cashback"] += calculate_cashback(abs(amount_float))
+
+        # Добавляем информацию о транзакции
+        transaction_date = operation.get('Дата операции')
+        if isinstance(transaction_date, (str, pd.Timestamp)):
+            # Приводим дату к нужному формату
+            if isinstance(transaction_date, pd.Timestamp):
+                transaction_date = transaction_date.strftime("%d.%m.%Y")
+            transactions.append({
+                "date": transaction_date,
+                "amount": amount_float,
+                "category": operation.get('Категория', 'Неизвестно'),
+                "description": operation.get('Описание', 'Нет описания')
+            })
         else:
-            print("Символ акции не может быть пустым. Пожалуйста, попробуйте снова.")
+            print(f"Неверный формат даты: {transaction_date}. Пропускаем эту транзакцию.")
 
-    for stock_symbol in stock_symbols:
-        response = main_page(date_time_input, stock_symbol)
-        print(response)
+    return list(cards.values()), transactions
 
 
-def handle_events_page():
-    """Обрабатывает действия на странице событий и выводит информацию о расходах и доходах за определенный период."""
-    print("Starting handle_events_page")
-    date_time_input = input("Введите дату (YYYY-MM-DD HH:MM:SS): ")
-    valid_date_time = validate_datetime(date_time_input)
+def main():
+    user_settings_path = os.path.join("..", "user_settings.json")
+    user_settings = load_user_settings(user_settings_path)
 
-    while not valid_date_time:
-        print("Неверный формат даты. Попробуйте снова.")
-        date_time_input = input("Введите дату (YYYY-MM-DD HH:MM:SS): ")
-        valid_date_time = validate_datetime(date_time_input)
+    try:
+        input_date = input("Введите дату в формате YYYY-MM-DD HH:MM:SS: ")
+        date_input = datetime.strptime(input_date, "%Y-%m-%d %H:%M:%S")
 
-    period = input("Введите период (W, M, Y, ALL) или оставьте пустым для месячного периода: ").strip().upper() or "M"
-    response = events_page(date_time_input, period)
-    print(response)
+        greeting = get_greeting()
 
+        # Загрузка данных операций
+        file_path = os.path.join("..", "data", "operations.xlsx")
+        operations = load_operations_data(file_path)
+        cards_list, transactions = process_operations(operations)
+
+        # Сортировка и получение топ-5 транзакций
+        top_transactions = sorted(transactions, key=lambda x: x['amount'], reverse=True)[:5]
+
+        # Загрузка курсов валют и цен акций
+        currency_rates = get_currency_rates(user_settings["user_currencies"])
+        stock_prices = get_stock_prices(user_settings["user_stocks"])
+
+        # Логирование для отладки
+        if not isinstance(currency_rates, list) or not isinstance(stock_prices, list):
+            raise ValueError("Ошибка: ожидается список для currency_rates и stock_prices.")
+
+        # Создание JSON-ответа
+        json_response = create_json_response(greeting, cards_list, top_transactions, currency_rates, stock_prices)
+
+        # Печать JSON-ответа
+        print(json_response)
+
+    except ValueError as ve:
+        print(f"Ошибка значения: {ve}")
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
 
 if __name__ == "__main__":
-    while True:
-        page_type = input("Введите тип страницы (main/events) или 'exit' для выхода: ").strip().lower()
-        if page_type == "exit":
-            break
-        elif page_type == "main":
-            handle_main_page()
-        elif page_type == "events":
-            handle_events_page()
-        else:
-            print("Неверный ввод, попробуйте еще раз.")
+    main()

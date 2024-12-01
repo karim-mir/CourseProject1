@@ -1,165 +1,98 @@
 import json
-import logging
-from datetime import datetime
-
+import os
 import pandas as pd
+import logging
+from src.utils import get_currency_rates, get_stock_prices, get_greeting, calculate_cashback
 
-from src.utils import get_currency_rates, get_stock_prices, load_transactions
+logging.basicConfig(level=logging.INFO)
 
+file_path = os.path.abspath(os.path.join("..", "data", "operations.xlsx"))
 
-def get_greeting() -> str:
-    """Возвращает приветствие в зависимости от текущего времени суток."""
-    current_hour = datetime.now().hour
-    if 5 <= current_hour < 12:
-        return "Доброе утро"
-    elif 12 <= current_hour < 18:
-        return "Добрый день"
-    elif 18 <= current_hour < 23:
-        return "Добрый вечер"
-    else:
-        return "Доброй ночи"
-
-
-def create_json_response(data):
-    """Формирует JSON-ответ из переданных данных."""
-    return json.dumps(data, ensure_ascii=False)
-
-
-def main_page(date_str: str, stock_symbol: str = None):
-    """Формация главной страницы с данными о транзакциях, курсах валют и ценах акций."""
-    # Добавьте часы, минуты и секунды, если они отсутствуют
-    if len(date_str) == 10:  # YYYY-MM-DD
-        date_str += " 00:00:00"
-
-    if not is_valid_datetime(date_str):
-        return create_json_response({"error": "Неверный формат даты. Используйте YYYY-MM-DD HH:MM:SS."})
-
-    # Логика загрузки транзакций
-    transactions = load_transactions(date_str)
-
-    if transactions.empty:
-        return create_json_response({"error": "Данные транзакций отсутствуют."})
-
-    # Используем transactions вместо transactions_df
-    card_groups = transactions.groupby("card")["amount"].agg(total_spent="sum").reset_index()
-    cards_info = [
-        {
-            "last_digits": row["card"][-4:],
-            "total_spent": round(row["total_spent"], 2),
-            "cashback": round(row["total_spent"] * 0.01, 2),
-        }
-        for _, row in card_groups.iterrows()
-    ]
-
-    top_transactions = (
-        transactions.nlargest(5, "amount")[["date", "amount", "category", "description"]]
-        .assign(date=lambda x: x["date"].dt.strftime("%d.%m.%Y"))
-        .to_dict(orient="records")
-    )
-
-    currency_rates = get_currency_rates()
-    stock_prices = get_stock_prices(stock_symbol)
-
-    greeting = get_greeting()  # Предполагается наличие этой функции
-
+def create_json_response(greeting, cards, top_transactions, currency_rates, stock_prices):
     response = {
         "greeting": greeting,
-        "cards": cards_info,
+        "cards": cards,
         "top_transactions": top_transactions,
         "currency_rates": currency_rates,
-        "stock_prices": stock_prices,
+        "stock_prices": stock_prices
     }
+    return json.dumps(response, ensure_ascii=False, indent=2)
 
-    return create_json_response(response)
-
-
-def events_page(date_time_str: str, period: str = "M") -> str:
-    """Формирует страницу событий, представляя данные за указанный период."""
-    # Проверка на валидность даты
-    if not is_valid_datetime(date_time_str):
-        return create_json_response({"error": "Неверный формат даты. Используйте YYYY-MM-DD HH:MM:SS."})
-
-    input_date_time = datetime.strptime(date_time_str, "%Y-%m-%d %H:%M:%S")
-    start_date, end_date = get_start_and_end_dates(input_date_time, period)
-
-    logging.info(f"Start date for filtering: {start_date}. End date: {end_date}.")
-
-    transactions_df = load_transactions()
-    transactions_df["date"] = pd.to_datetime(transactions_df["date"])
-
-    logging.info(f"Loaded transactions: {len(transactions_df)} records.")
-    logging.info(f"Transaction dates: {transactions_df['date'].dt.strftime('%Y-%m-%d %H:%M:%S').unique()}")
-
-    if transactions_df.empty:
-        return create_json_response({"error": "Данные транзакций отсутствуют."})
-
-    filtered_df = transactions_df[(transactions_df["date"] >= start_date) & (transactions_df["date"] <= end_date)]
-
-    logging.info(f"Filtered transactions: {filtered_df.to_dict(orient='records')}")
-
-    if filtered_df.empty:
-        return create_json_response({"error": "Нет данных за указанный период."})
-
-    total_expenses = filtered_df[filtered_df["amount"] < 0]["amount"].sum()
-    total_income = filtered_df[filtered_df["amount"] > 0]["amount"].sum()
-
-    main_expenses = (
-        filtered_df[filtered_df["amount"] < 0].groupby("category")["amount"].sum().nlargest(6).reset_index()
-    )
-    main_expenses["amount"] = (
-        main_expenses["amount"].astype(float).abs()
-    )  # Преобразуем к float и берем положительное значение
-
-    main_income = filtered_df[filtered_df["amount"] > 0].groupby("category")["amount"].sum().nlargest(3).reset_index()
-
-    main_income["amount"] = main_income["amount"].astype(float)  # Преобразуем к float
-
-    currency_rates = get_currency_rates()
-    stock_prices = get_stock_prices("AAPL")
-
-    response = {
-        "expenses": {
-            "total_amount": float(total_expenses),
-            "main": main_expenses.to_dict(orient="records"),
-        },
-        "income": {
-            "total_amount": float(total_income),
-            "main": main_income.to_dict(orient="records"),
-        },
-        "currency_rates": currency_rates,
-        "stock_prices": stock_prices if stock_prices is not None else {"error": "Could not retrieve stock prices"},
-    }
-    logging.info(f"Response data: {response}")
-
-    return create_json_response(response)
-
-
-def get_start_and_end_dates(input_date_time: datetime, period: str) -> (datetime, datetime):
-    """Возвращает начальную и конечную даты для заданного периода."""
-    if period == "W":
-        start_date = input_date_time - pd.Timedelta(days=input_date_time.weekday())
-        end_date = start_date + pd.Timedelta(days=6)
-    elif period == "M":
-        start_date = input_date_time.replace(day=1)
-        end_date = input_date_time
-    elif period == "Y":
-        start_date = input_date_time.replace(month=1, day=1)
-        end_date = input_date_time
-    elif period == "ALL":
-        start_date = datetime(2010, 1, 1)
-        end_date = input_date_time
-    else:
-        start_date = input_date_time.replace(day=1)
-        end_date = input_date_time
-
-    return start_date, end_date
-
-
-def is_valid_datetime(dt_str: str) -> bool:
-    """Проверяет, является ли строка даты и времени валидной."""
+def load_operations_data(file_path):
     try:
-        # Проверяем формат с учетом времени
-        datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-        return True
-    except ValueError:
-        return False
+        df = pd.read_excel(file_path)
+
+        # Преобразуем даты в нужный формат
+        df['Дата операции'] = pd.to_datetime(df['Дата операции'], format='%d.%m.%Y %H:%M:%S', errors='coerce')
+        df['Дата платежа'] = pd.to_datetime(df['Дата платежа'], format='%d.%m.%Y', errors='coerce')  # Добавлено преобразование
+
+        # Преобразование типов столбцов
+        df['Сумма операции'] = df['Сумма операции'].astype(float)
+        df['Сумма платежа'] = df['Сумма платежа'].astype(float)
+        df['Кэшбэк'] = df['Кэшбэк'].astype(float)
+        df['MCC'] = df['MCC'].astype(float)
+        df['Сумма операции с округлением'] = df['Сумма операции с округлением'].astype(float)
+
+        operations = df.to_dict(orient='records')
+        logging.info("Данные успешно загружены из файла Excel.")
+        return operations
+    except FileNotFoundError:
+        logging.error(f"Файл не найден: {file_path}")
+        return []
+    except ValueError as e:
+        logging.error(f"Ошибка чтения файла Excel: {e}")
+        return []
+    except Exception as e:
+        logging.error(f"Произошла ошибка: {e}")
+        return []
+
+def generate_report(file_path, user_currencies, user_stocks):
+    operations = load_operations_data(file_path)
+
+    if not operations:
+        return create_json_response("Ошибка загрузки данных", [], [], [], [])
+
+    # Формируем данные о картах
+    cards_data = {}
+    for op in operations:
+        card_number = op['Номер карты']
+        total_spent = cards_data.get(card_number, {'total_spent': 0, 'cashback': 0})
+        total_spent['total_spent'] += op['Сумма операции']
+        total_spent['cashback'] += calculate_cashback(op['Сумма операции'])  # Используем функцию из utils
+        cards_data[card_number] = total_spent
+
+    cards = [
+        {
+            "last_digits": str(card)[-4:],
+            "total_spent": round(data['total_spent'], 2),
+            "cashback": round(data['cashback'], 2)
+        }
+        for card, data in cards_data.items()
+    ]
+
+    # Формируем топ-5 транзакций
+    top_transactions = sorted(operations, key=lambda x: x['Сумма платежа'], reverse=True)[:5]
+    top_transactions = [
+        {
+            "date": op['Дата платежа'].strftime('%d.%m.%Y'),
+            "amount": round(op['Сумма платежа'], 2),
+            "category": op['Категория'],
+            "description": op['Описание']
+        }
+        for op in top_transactions
+    ]
+
+    # Получаем курсы валют и цены акций
+    currency_rates = get_currency_rates(user_currencies)
+    stock_prices = get_stock_prices(user_stocks)
+
+    greeting = get_greeting()
+
+    return create_json_response(greeting, cards, top_transactions, currency_rates, stock_prices)
+
+# Пример использования функции
+if __name__ == "__main__":
+    user_currencies = ["USD", "EUR"]  # Пример списка валют
+    user_stocks = ["AAPL", "AMZN"]  # Пример списка акций
+    json_response = generate_report(os.path.abspath(os.path.join("..", "data", "operations.xlsx")), user_currencies, user_stocks)
+    print(json_response)
