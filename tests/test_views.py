@@ -125,7 +125,7 @@ class TestLoadOperationsData(unittest.TestCase):
         print(result)  # Для отладки
         self.assertEqual(result, expected_result)  # Сравниваем напрямую, уже в подходящем формате
 
-        # Если хотите также проверить строки:
+        # Также проверим строки:
         expected_formatted = [
             {
                 "Номер карты": "1234567890123456",

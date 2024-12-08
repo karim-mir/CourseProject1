@@ -31,7 +31,7 @@ class TestUtils(unittest.TestCase):
 
     @patch("src.utils.requests.get")
     def test_get_currency_rates_success(self, mock_requests_get):
-        # Mocking the response from requests.get
+        # Мокируем ответ от requests.get
         mock_response = mock_requests_get.return_value
         mock_response.status_code = 200
         mock_response.json.return_value = {"rates": {"USD": 74.5, "EUR": 88.2}, "success": True}
@@ -44,7 +44,7 @@ class TestUtils(unittest.TestCase):
 
     @patch("src.utils.requests.get")
     def test_get_currency_rates_failure(self, mock_requests_get):
-        # Mocking the response with an error
+        # Мокаем ответ с ошибкой
         mock_response = mock_requests_get.return_value
         mock_response.status_code = 400  # Bad request
         mock_response.text = "Bad Request"
