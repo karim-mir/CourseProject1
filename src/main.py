@@ -3,6 +3,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from src.reports import spending_by_category
+from src.services import analyze_cashback
 from src.utils import calculate_cashback, get_currency_rates, get_greeting, get_stock_prices, load_user_settings
 from src.views import create_json_response, load_operations_data
 
@@ -76,6 +78,7 @@ def main():
         input_date = input("Введите дату в формате YYYY-MM-DD HH:MM:SS: ")
         date_input = datetime.strptime(input_date, "%Y-%m-%d %H:%M:%S")
 
+        print(f"Тип date_input: {type(date_input)}")
         greeting = get_greeting()
 
         # Загрузка данных операций
@@ -90,15 +93,27 @@ def main():
         currency_rates = get_currency_rates(user_settings["user_currencies"])
         stock_prices = get_stock_prices(user_settings["user_stocks"])
 
-        # Логирование для отладки
-        if not isinstance(currency_rates, list) or not isinstance(stock_prices, list):
-            raise ValueError("Ошибка: ожидается список для currency_rates и stock_prices.")
-
         # Создание JSON-ответа
         json_response = create_json_response(greeting, cards_list, top_transactions, currency_rates, stock_prices)
 
         # Печать JSON-ответа
+        print("JSON Ответ:")
         print(json_response)
+
+        # Вызов функции analyze_cashback из services.py
+        cashback_report = analyze_cashback(file_path, date_input.year, date_input.month)
+        if not isinstance(cashback_report, dict):
+            raise ValueError("Ожидался словарь в отчете по кешбэку.")
+
+        print("Отчет по кешбэку:")
+        print(cashback_report)
+
+        # Вызов функции spending_by_category из reports.py (пример для категории)
+        # Если вы хотите проанализировать конкретную категорию, вы можете указать её в качестве аргумента
+        category_to_check = "Супермаркеты"  # Замените на нужную категорию
+        spending_report = spending_by_category(pd.DataFrame(operations), category_to_check)
+        print(f"Отчет по тратам для категории '{category_to_check}':")
+        print(spending_report.to_dict(orient="records"))
 
     except ValueError as ve:
         print(f"Ошибка значения: {ve}")

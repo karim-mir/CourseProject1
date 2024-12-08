@@ -9,7 +9,7 @@ class TestMain(unittest.TestCase):
     @patch("src.utils.calculate_cashback")
     def test_process_operations(self, mock_calculate_cashback):
         # Настройка мока для calculate_cashback
-        mock_calculate_cashback.return_value = 5.0  # Пример кешбэка
+        mock_calculate_cashback.side_effect = lambda amount: amount * 0.01  # Предполагаем что кэшбэк 1%
 
         operations = [
             {
@@ -44,8 +44,8 @@ class TestMain(unittest.TestCase):
         ]
 
         expected_cards = [
-            {"last_digits": "3456", "total_spent": 150.0, "cashback": 1.5},
-            {"last_digits": "7654", "total_spent": 200.0, "cashback": 2.0},
+            {"last_digits": "3456", "total_spent": 150.0, "cashback": 1.5},  # 1% от 150
+            {"last_digits": "7654", "total_spent": 200.0, "cashback": 2.0},  # 1% от 200
         ]
 
         expected_transactions = [

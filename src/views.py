@@ -8,7 +8,7 @@ from src.utils import calculate_cashback, get_currency_rates, get_greeting, get_
 
 logging.basicConfig(level=logging.INFO)
 
-file_path = os.path.abspath(os.path.join("..", "data", "operations.xlsx"))
+file_path = os.path.join(os.path.dirname(__file__), "..", "data", "operations.xlsx")
 
 
 def create_json_response(greeting, cards, top_transactions, currency_rates, stock_prices):

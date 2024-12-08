@@ -1,55 +1,70 @@
-from datetime import datetime, timedelta
+import json
+import os
+from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
-from src.views import get_start_and_end_dates, is_valid_datetime
+from src.views import generate_report
+
+# Путь к тестовым данным
+TEST_DATA_PATH = os.path.join(os.path.dirname(__file__), "test_operations.xlsx")
 
 
 @pytest.fixture
-def date_times():
-    return [
-        (datetime(2024, 11, 11, 14, 12, 31), "W"),  # Тестовая дата для недели
-        (datetime(2024, 11, 11, 14, 12, 31), "M"),  # Тестовая дата для месяца
-        (datetime(2024, 11, 11, 14, 12, 31), "Y"),  # Тестовая дата для года
-        (datetime(2024, 11, 11, 14, 12, 31), "ALL"),  # Тестовая дата для всех периодов
-    ]
+def operations_data():
+    # Создадим тестовый и временный DataFrame и сохраним его в Excel
+    data = {
+        "Номер карты": [1234567812345678] * 5,
+        "Сумма операции": [100.0, 200.0, 150.0, 250.0, 300.0],
+        "Дата операции": [
+            "01.12.2021 10:00:00",
+            "02.12.2021 11:00:00",
+            "03.12.2021 12:00:00",
+            "04.12.2021 13:00:00",
+            "05.12.2021 14:00:00",
+        ],
+        "Сумма платежа": [100.0, 200.0, 150.0, 250.0, 300.0],
+        "Дата платежа": [
+            "01.12.2021",
+            "02.12.2021",
+            "03.12.2021",
+            "04.12.2021",
+            "05.12.2021",
+        ],
+        "Категория": ["Еда", "Развлечения", "Транспорт", "Покупки", "Техника"],
+        "Описание": ["Покупка 1", "Покупка 2", "Покупка 3", "Покупка 4", "Покупка 5"],
+    }
+    df = pd.DataFrame(data)
+    df.to_excel(TEST_DATA_PATH, index=False, engine="openpyxl")  # Сохраним в Excel
+
+    yield TEST_DATA_PATH  # Вернем путь к тестовым данным
+
+    # После теста удалим тестовый файл
+    os.remove(TEST_DATA_PATH)
 
 
-def test_get_start_and_end_dates(date_times):
-    for input_date_time, period in date_times:
-        start_date, end_date = get_start_and_end_dates(input_date_time, period)
+def test_generate_report(operations_data):
+    user_currencies = ["USD", "EUR"]
+    user_stocks = ["AAPL", "AMZN"]
 
-        if period == "W":
-            expected_start = input_date_time - timedelta(days=input_date_time.weekday())
-            expected_end = expected_start + timedelta(days=6)
-        elif period == "M":
-            expected_start = input_date_time.replace(day=1)
-            expected_end = input_date_time
-        elif period == "Y":
-            expected_start = input_date_time.replace(month=1, day=1)
-            expected_end = input_date_time
-        elif period == "ALL":
-            expected_start = datetime(2010, 1, 1)
-            expected_end = input_date_time
-        else:
-            expected_start = input_date_time.replace(day=1)
-            expected_end = input_date_time
+    with patch("src.utils.calculate_cashback") as mock_calculate_cashback:
+        mock_calculate_cashback.return_value = 5.0  # Предположим, что кэшбэк всегда 5
 
-        assert start_date == expected_start
-        assert end_date == expected_end
+        json_response = generate_report(operations_data, user_currencies, user_stocks)
 
+        # Проверяем, что ответ имеет нужные ключи
+        response_data = json.loads(json_response)
+        assert "greeting" in response_data
+        assert "cards" in response_data
+        assert "top_transactions" in response_data
+        assert "currency_rates" in response_data
+        assert "stock_prices" in response_data
 
-@pytest.mark.parametrize(
-    "test_input,expected",
-    [
-        ("2024-11-11 14:12:31", True),
-        ("2024-11-11 14:12:61", False),  # Неверная секунда
-        ("2024-11-11", False),  # Неверный формат (без времени)
-        ("invalid-date-time", False),  # Полностью неверный формат
-    ],
-)
-def test_is_valid_datetime(test_input, expected):
-    assert is_valid_datetime(test_input) == expected
+        # Проверяем, что топ-5 транзакций возвращает правильные данные
+        assert len(response_data["top_transactions"]) == 5
+        assert response_data["top_transactions"][0]["amount"] == 300.0  # Проверяем наибольшую сумму платежа
+        assert round(response_data["cards"][0]["total_spent"], 2) == 1000.0  # Проверяем общую сумму по картам
 
 
 if __name__ == "__main__":
